@@ -4,6 +4,7 @@ import userRoutes from './user.routes.js'
 import complaintRoutes from './complaint.routes.js'
 import wardOfficerRoutes from './wardOfficer.routes.js'
 import dashboardRoutes from './dashboard.routes.js'
+import adminRoutes from './admin.routes.js'
 
 const router = Router()
 
@@ -14,5 +15,6 @@ router.use('/users', userRoutes)
 router.use('/complaints', complaintRoutes)
 router.use('/ward-officer', wardOfficerRoutes)
 router.use('/dashboard', dashboardRoutes)
+router.use('/admin', adminRoutes)
 
 export default router

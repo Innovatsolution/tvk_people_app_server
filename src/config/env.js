@@ -15,8 +15,12 @@ function required(name) {
 export const env = {
   port: Number(process.env.PORT) || 4000,
   nodeEnv: process.env.NODE_ENV || 'development',
-  corsOrigin: process.env.CORS_ORIGIN || 'http://localhost:5173',
-  publicBaseUrl: process.env.PUBLIC_BASE_URL || `http://localhost:${process.env.PORT || 4000}`,
+  // Comma-separated list, e.g. "http://localhost:5173,http://localhost:5174"
+  // - the citizen app and admin dashboard run on different ports/domains.
+  corsOrigins: (process.env.CORS_ORIGIN || 'http://localhost:5173,http://localhost:5174')
+    .split(',')
+    .map((o) => o.trim())
+    .filter(Boolean),
 
   jwtSecret: required('JWT_SECRET'),
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '7d',

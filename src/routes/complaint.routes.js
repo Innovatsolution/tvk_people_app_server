@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { body, param, query } from 'express-validator'
 import { validate } from '../middleware/validate.js'
 import { requireAuth } from '../middleware/auth.js'
+import { requireAdmin } from '../middleware/requireAdmin.js'
 import { upload } from '../middleware/upload.js'
 import {
   listComplaints,
@@ -36,8 +37,12 @@ router.post(
   createComplaintHandler
 )
 
+// Ward-officer / admin action - only admins may move a complaint through its
+// status lifecycle. requireAdmin runs after requireAuth (applied above via
+// router.use), so this checks the caller's role on top of their session.
 router.patch(
   '/:id/status',
+  requireAdmin,
   upload.single('afterImage'),
   [
     param('id').notEmpty(),

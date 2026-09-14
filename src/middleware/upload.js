@@ -1,24 +1,13 @@
 import multer from 'multer'
-import path from 'node:path'
-import fs from 'node:fs'
-import { fileURLToPath } from 'node:url'
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const uploadsDir = path.resolve(__dirname, '../../uploads')
-
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true })
-}
-
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, uploadsDir),
-  filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname) || '.jpg'
-    const safeBase = path.basename(file.originalname, ext).replace(/[^a-z0-9_-]/gi, '_').slice(0, 40)
-    cb(null, `${Date.now()}_${safeBase}${ext}`)
-  },
-})
-
+// Memory storage: we no longer write files to disk. Every uploaded photo is
+// resized/compressed (see utils/imageProcessor.js) and stored as a base64
+// data URI directly on the Firestore complaint document, so all we need
+// here is the raw buffer in memory before that conversion happens.
+//
+// The raw upload limit is generous (phone camera photos are often 3-8MB) -
+// imageProcessor.js is responsible for compressing that down to something
+// that safely fits Firestore's 1 MiB per-document limit, not this middleware.
 function imageOnlyFilter(req, file, cb) {
   if (!file.mimetype.startsWith('image/')) {
     return cb(new Error('Only image uploads are allowed'))
@@ -27,9 +16,7 @@ function imageOnlyFilter(req, file, cb) {
 }
 
 export const upload = multer({
-  storage,
+  storage: multer.memoryStorage(),
   fileFilter: imageOnlyFilter,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB raw upload ceiling
 })
-
-export const uploadsDirPath = uploadsDir

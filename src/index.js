@@ -3,5 +3,5 @@ import { env } from './config/env.js'
 
 app.listen(env.port, () => {
   console.log(`TVK complaint API listening on http://localhost:${env.port}`)
-  console.log(`CORS allowed origin: ${env.corsOrigin}`)
+  console.log(`CORS allowed origins: ${env.corsOrigins.join(', ')}`)
 })

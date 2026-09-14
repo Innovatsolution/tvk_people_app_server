@@ -3,6 +3,7 @@ import { asyncHandler } from '../utils/asyncHandler.js'
 import { ApiError } from '../utils/apiError.js'
 import { generateComplaintId } from '../utils/idGenerator.js'
 import { mapComplaint } from '../utils/mapComplaint.js'
+import { processImageToBase64 } from '../utils/imageProcessor.js'
 import {
   createComplaint,
   findComplaintByDisplayId,
@@ -40,7 +41,7 @@ export const createComplaintHandler = asyncHandler(async (req, res) => {
   }
 
   const displayId = await generateComplaintId()
-  const beforeImagePath = req.file ? `/uploads/${req.file.filename}` : null
+  const beforeImageBase64 = req.file ? await processImageToBase64(req.file.buffer) : null
 
   const complaint = await createComplaint({
     displayId,
@@ -51,8 +52,8 @@ export const createComplaintHandler = asyncHandler(async (req, res) => {
     ward,
     status: 'submitted', // awaiting ward officer review
     statusTimestamps: {},
-    beforeImagePath,
-    afterImagePath: null,
+    beforeImageBase64,
+    afterImageBase64: null,
     rejectReason: null,
   })
 
@@ -62,9 +63,7 @@ export const createComplaintHandler = asyncHandler(async (req, res) => {
 // PATCH /api/complaints/:id/status  (multipart/form-data)
 // fields: status ('accepted' | 'rejected' | 'pending' | 'completed'), rejectReason?
 // file:   afterImage (optional, typically attached when status = 'completed')
-//
-// NOTE: in production this action belongs to a ward-officer / admin role, not the
-// citizen who filed the complaint - add a role check here once you have roles.
+// Admin-only - see requireAdmin in complaint.routes.js.
 export const updateComplaintStatus = asyncHandler(async (req, res) => {
   const { status, rejectReason } = req.body
 
@@ -89,7 +88,7 @@ export const updateComplaintStatus = asyncHandler(async (req, res) => {
   }
   if (status === 'completed') {
     patch['statusTimestamps.completedAt'] = FieldValue.serverTimestamp()
-    if (req.file) patch.afterImagePath = `/uploads/${req.file.filename}`
+    if (req.file) patch.afterImageBase64 = await processImageToBase64(req.file.buffer)
   }
   if (status === 'rejected') {
     patch.rejectReason = rejectReason

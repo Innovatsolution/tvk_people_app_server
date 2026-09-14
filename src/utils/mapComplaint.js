@@ -1,10 +1,4 @@
-import { env } from '../config/env.js'
 import { buildSteps } from './statusSteps.js'
-
-function toAbsoluteUrl(relativePath) {
-  if (!relativePath) return null
-  return `${env.publicBaseUrl}${relativePath}`
-}
 
 function formatListDate(date) {
   if (!date) return null
@@ -24,8 +18,8 @@ export function mapComplaint(complaint) {
     status,
     createdAt,
     statusTimestamps,
-    beforeImagePath,
-    afterImagePath,
+    beforeImageBase64,
+    afterImageBase64,
     rejectReason,
   } = complaint
 
@@ -37,10 +31,11 @@ export function mapComplaint(complaint) {
     location: ward,
     date: formatListDate(createdAt),
     status,
-    hasBeforeImage: Boolean(beforeImagePath),
-    hasAfterImage: Boolean(afterImagePath),
-    beforeImageUrl: toAbsoluteUrl(beforeImagePath),
-    afterImageUrl: toAbsoluteUrl(afterImagePath),
+    hasBeforeImage: Boolean(beforeImageBase64),
+    hasAfterImage: Boolean(afterImageBase64),
+    // Already a data: URI (see utils/imageProcessor.js) - usable directly as an <img> src.
+    beforeImageUrl: beforeImageBase64 || null,
+    afterImageUrl: afterImageBase64 || null,
     rejectReason: rejectReason || null,
     steps: buildSteps(status, statusTimestamps),
   }

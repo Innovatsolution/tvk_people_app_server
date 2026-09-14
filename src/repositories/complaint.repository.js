@@ -73,3 +73,51 @@ export async function countComplaintsByUser(userId) {
   const snap = await complaintsCol.where('userId', '==', userId).count().get()
   return snap.data().count
 }
+
+// Admin-facing: every complaint across every user. Deliberately fetches the
+// whole collection unfiltered and does status/category/search matching in
+// Node - the same reasoning as listComplaintsByUser above, but doubly so
+// here: combining two or more separate Firestore filters (e.g. status +
+// category) on different fields also triggers the composite-index
+// requirement, so filtering in Node sidesteps that entirely. Fine at this
+// app's scale; revisit if the complaints collection grows very large (see
+// README's production checklist).
+export async function listAllComplaints({ statusFilter, category, search } = {}) {
+  const snap = await complaintsCol.get()
+  let complaints = snap.docs.map(toComplaint)
+
+  if (statusFilter && statusFilter !== 'all') {
+    const group = STATUS_GROUPS[statusFilter] || [statusFilter]
+    complaints = complaints.filter((c) => group.includes(c.status))
+  }
+
+  if (category) {
+    complaints = complaints.filter((c) => c.category === category)
+  }
+
+  if (search) {
+    const needle = search.trim().toLowerCase()
+    complaints = complaints.filter(
+      (c) =>
+        c.displayId?.toLowerCase().includes(needle) ||
+        c.title?.toLowerCase().includes(needle) ||
+        c.ward?.toLowerCase().includes(needle)
+    )
+  }
+
+  complaints.sort((a, b) => toMillis(b.createdAt) - toMillis(a.createdAt))
+  return complaints
+}
+
+export async function countAllComplaintsByStatus() {
+  // Individual single-field equality counts - each is covered by Firestore's
+  // automatic single-field index, so none of these need a composite index.
+  const statuses = ['submitted', 'accepted', 'rejected', 'pending', 'completed']
+  const counts = await Promise.all(
+    statuses.map(async (status) => {
+      const snap = await complaintsCol.where('status', '==', status).count().get()
+      return [status, snap.data().count]
+    })
+  )
+  return Object.fromEntries(counts)
+}

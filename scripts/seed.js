@@ -12,6 +12,8 @@ import { db } from '../src/config/firebase.js'
 const WARD = '15வது வார்டு, ஆழ்வார்குறிச்சி'
 const DEMO_MOBILE = '9876543210'
 const DEMO_PASSWORD = 'password123'
+const ADMIN_MOBILE = '9999999999'
+const ADMIN_PASSWORD = 'admin12345'
 
 async function seedWardOfficer() {
   await upsertWardOfficer(WARD, {
@@ -34,6 +36,7 @@ async function seedDemoUserAndComplaints() {
       mobile: DEMO_MOBILE,
       passwordHash,
       ward: WARD,
+      role: 'citizen',
     })
     console.log(`✓ Demo user created (mobile: ${DEMO_MOBILE}, password: ${DEMO_PASSWORD})`)
   } else {
@@ -57,8 +60,8 @@ async function seedDemoUserAndComplaints() {
       ward: WARD,
       status: 'pending',
       statusTimestamps: { reviewedAt: daysAgo(1), pendingAt: daysAgo(0) },
-      beforeImagePath: null,
-      afterImagePath: null,
+      beforeImageBase64: null,
+      afterImageBase64: null,
       rejectReason: null,
       createdAt: daysAgo(1),
     },
@@ -69,8 +72,8 @@ async function seedDemoUserAndComplaints() {
       ward: WARD,
       status: 'rejected',
       statusTimestamps: { reviewedAt: daysAgo(2) },
-      beforeImagePath: null,
-      afterImagePath: null,
+      beforeImageBase64: null,
+      afterImageBase64: null,
       rejectReason: 'இந்த பகுதி தனியார் நிலம் என அடையாளம் காணப்பட்டது.',
       createdAt: daysAgo(3),
     },
@@ -81,8 +84,8 @@ async function seedDemoUserAndComplaints() {
       ward: WARD,
       status: 'accepted',
       statusTimestamps: { reviewedAt: daysAgo(5) },
-      beforeImagePath: null,
-      afterImagePath: null,
+      beforeImageBase64: null,
+      afterImageBase64: null,
       rejectReason: null,
       createdAt: daysAgo(6),
     },
@@ -93,8 +96,8 @@ async function seedDemoUserAndComplaints() {
       ward: WARD,
       status: 'completed',
       statusTimestamps: { reviewedAt: daysAgo(8), pendingAt: daysAgo(7), completedAt: daysAgo(6) },
-      beforeImagePath: null,
-      afterImagePath: null,
+      beforeImageBase64: null,
+      afterImageBase64: null,
       rejectReason: null,
       createdAt: daysAgo(9),
     },
@@ -113,9 +116,29 @@ async function seedDemoUserAndComplaints() {
   }
 }
 
+async function seedDemoAdmin() {
+  const existing = await findUserByMobile(ADMIN_MOBILE)
+  if (existing) {
+    console.log('• Demo admin already exists, skipping creation')
+    return
+  }
+
+  const passwordHash = await bcrypt.hash(ADMIN_PASSWORD, 10)
+  await createUser({
+    username: 'Admin',
+    email: null,
+    mobile: ADMIN_MOBILE,
+    passwordHash,
+    ward: null,
+    role: 'admin',
+  })
+  console.log(`✓ Demo admin created (mobile: ${ADMIN_MOBILE}, password: ${ADMIN_PASSWORD})`)
+}
+
 async function main() {
   await seedWardOfficer()
   await seedDemoUserAndComplaints()
+  await seedDemoAdmin()
   console.log('\nSeed complete.')
   process.exit(0)
 }
