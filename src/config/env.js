@@ -23,7 +23,11 @@ export const env = {
     .filter(Boolean),
 
   jwtSecret: required('JWT_SECRET'),
-  jwtExpiresIn: process.env.JWT_EXPIRES_IN || '7d',
+  // 30 days - the citizen app now keeps the token in localStorage so people
+  // stay logged in across app restarts; the token's own lifetime should be
+  // long enough to match that expectation rather than forcing a re-login
+  // every week.
+  jwtExpiresIn: process.env.JWT_EXPIRES_IN || '30d',
 
   firebase: {
     projectId: required('FIREBASE_PROJECT_ID'),
