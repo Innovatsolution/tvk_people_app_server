@@ -17,10 +17,11 @@ const ADMIN_PASSWORD = 'admin12345'
 
 async function seedWardOfficer() {
   await upsertWardOfficer(WARD, {
-    name: 'திரு. முருகன்',
-    role: 'வார்டு பொறுப்பாளர்',
+    name: 'M. முத்துகுமார்',
+    role: 'பேரூர் கழக செயலாளர், தமிழக வெற்றிக் கழகம்.',
     ward: WARD,
-    phone: '9876500000',
+    phone: '9597945585',
+    email: 'tvkalwarkurichiperur@gmail.com',
   })
   console.log(`✓ Ward officer upserted for "${WARD}"`)
 }
