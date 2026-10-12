@@ -1,14 +1,18 @@
 import bcrypt from 'bcryptjs'
 import { asyncHandler } from '../utils/asyncHandler.js'
 import { ApiError } from '../utils/apiError.js'
-import { signToken } from '../utils/token.js'
+import { signToken, signResetToken, verifyResetToken } from '../utils/token.js'
+import { env } from '../config/env.js'
 import {
   createUser,
   findUserByMobile,
   findUserById,
   updateUser,
+  clearResetOtp,
   stripSensitive,
 } from '../repositories/user.repository.js'
+import { createPasswordResetService } from '../services/passwordReset.service.js'
+import { deliverOtp } from '../services/otpDelivery.js'
 
 const SALT_ROUNDS = 10
 
@@ -48,24 +52,39 @@ export const login = asyncHandler(async (req, res) => {
   res.json({ token, user: stripSensitive(user) })
 })
 
-// POST /api/auth/forgot-password
-// body: { mobile, newPassword, confirmPassword }
-//
-// NOTE: this resets the password as soon as the mobile number is known, matching
-// the current frontend screen. Before going to production, add an OTP-verification
-// step (send code -> verify code -> only then allow this call) so anyone who knows
-// a mobile number can't reset a stranger's password.
-export const forgotPassword = asyncHandler(async (req, res) => {
-  const { mobile, newPassword } = req.body
+// ---- Forgot password (OTP flow) ------------------------------------------
+// 1. POST /auth/forgot-password/request-otp  { mobile }
+// 2. POST /auth/forgot-password/verify-otp   { mobile, otp }       -> { resetToken }
+// 3. POST /auth/forgot-password/reset        { resetToken, newPassword, confirmPassword }
+// The rules (expiry, attempt limit, cooldown) live in services/passwordReset.service.js.
+const passwordReset = createPasswordResetService({
+  users: {
+    findByMobile: findUserByMobile,
+    findById: findUserById,
+    update: updateUser,
+    clearResetOtp,
+  },
+  config: env.otp,
+  signResetToken,
+  verifyResetToken,
+  deliverOtp,
+})
 
-  const user = await findUserByMobile(mobile)
-  if (!user) {
-    throw ApiError.notFound('No account found for this mobile number')
-  }
+// Checks the mobile number is registered, generates an OTP and stores it on that
+// user's document. The OTP is included in the response only when
+// OTP_RETURN_IN_RESPONSE=true (see config/env.js).
+export const requestPasswordResetOtp = asyncHandler(async (req, res) => {
+  const result = await passwordReset.requestOtp(req.body.mobile)
+  res.json({ message: 'OTP generated', ...result })
+})
 
-  const passwordHash = await bcrypt.hash(newPassword, SALT_ROUNDS)
-  await updateUser(user.id, { passwordHash })
+export const verifyPasswordResetOtp = asyncHandler(async (req, res) => {
+  const { resetToken } = await passwordReset.verifyOtp(req.body.mobile, req.body.otp)
+  res.json({ message: 'OTP verified', resetToken })
+})
 
+export const resetPassword = asyncHandler(async (req, res) => {
+  await passwordReset.resetPassword(req.body.resetToken, req.body.newPassword)
   res.json({ message: 'Password updated successfully' })
 })
 

@@ -1,4 +1,5 @@
 import { env } from '../config/env.js'
+import { ApiError } from '../utils/apiError.js'
 
 export function notFoundHandler(req, res) {
   res.status(404).json({ message: `Route not found: ${req.method} ${req.originalUrl}` })
@@ -28,6 +29,7 @@ export function errorHandler(err, req, res, next) {
 
   res.status(statusCode).json({
     message,
+    ...(err instanceof ApiError && err.code ? { code: err.code } : {}),
     ...(err.details ? { details: err.details } : {}),
   })
 }

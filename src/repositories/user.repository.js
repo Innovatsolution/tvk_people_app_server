@@ -69,6 +69,17 @@ function toMillis(timestamp) {
 
 export function stripSensitive(user) {
   if (!user) return user
-  const { passwordHash, ...safe } = user
+  // eslint-disable-next-line no-unused-vars
+  const { passwordHash, resetOtp, resetOtpExpiresAt, resetOtpAttempts, resetOtpRequestedAt, ...safe } = user
   return safe
+}
+
+// Removes every forgot-password OTP field from the user's document.
+export async function clearResetOtp(id) {
+  await usersCol.doc(id).update({
+    resetOtp: FieldValue.delete(),
+    resetOtpExpiresAt: FieldValue.delete(),
+    resetOtpAttempts: FieldValue.delete(),
+    resetOtpRequestedAt: FieldValue.delete(),
+  })
 }

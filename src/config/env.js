@@ -22,6 +22,19 @@ export const env = {
     .map((o) => o.trim())
     .filter(Boolean),
 
+  // Forgot-password OTP settings (see services/passwordReset.service.js)
+  otp: {
+    expiryMinutes: Number(process.env.OTP_EXPIRY_MINUTES) || 5,
+    maxAttempts: Number(process.env.OTP_MAX_ATTEMPTS) || 5,
+    resendSeconds: Number(process.env.OTP_RESEND_SECONDS) || 30,
+    // true  = the API returns the OTP and the app shows it on screen (no SMS
+    //         provider yet). Anyone who knows a registered mobile number can then
+    //         read the OTP, so this is NOT safe for production.
+    // false = the OTP is only handed to services/otpDelivery.js (wire an SMS
+    //         gateway there) and is never sent back to the caller.
+    returnInResponse: (process.env.OTP_RETURN_IN_RESPONSE ?? 'true') !== 'false',
+  },
+
   jwtSecret: required('JWT_SECRET'),
   // 30 days - the citizen app now keeps the token in localStorage so people
   // stay logged in across app restarts; the token's own lifetime should be

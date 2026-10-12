@@ -2,7 +2,14 @@ import { Router } from 'express'
 import { body } from 'express-validator'
 import { validate } from '../middleware/validate.js'
 import { requireAuth } from '../middleware/auth.js'
-import { signup, login, forgotPassword, me } from '../controllers/auth.controller.js'
+import {
+  signup,
+  login,
+  requestPasswordResetOtp,
+  verifyPasswordResetOtp,
+  resetPassword,
+  me,
+} from '../controllers/auth.controller.js'
 
 const router = Router()
 
@@ -32,14 +39,31 @@ router.post(
 )
 
 router.post(
-  '/forgot-password',
+  '/forgot-password/request-otp',
+  [body('mobile').matches(MOBILE_RE).withMessage('Enter a valid 10-digit mobile number')],
+  validate,
+  requestPasswordResetOtp
+)
+
+router.post(
+  '/forgot-password/verify-otp',
   [
     body('mobile').matches(MOBILE_RE).withMessage('Enter a valid 10-digit mobile number'),
+    body('otp').matches(/^\d{6}$/).withMessage('Enter the 6-digit OTP'),
+  ],
+  validate,
+  verifyPasswordResetOtp
+)
+
+router.post(
+  '/forgot-password/reset',
+  [
+    body('resetToken').notEmpty().withMessage('Reset token is required'),
     body('newPassword').isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
     body('confirmPassword').custom((value, { req }) => value === req.body.newPassword).withMessage('Passwords do not match'),
   ],
   validate,
-  forgotPassword
+  resetPassword
 )
 
 router.get('/me', requireAuth, me)

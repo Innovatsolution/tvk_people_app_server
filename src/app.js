@@ -9,7 +9,14 @@ import { notFoundHandler, errorHandler } from './middleware/errorHandler.js'
 export const app = express()
 
 app.use(helmet())
-app.use(cors())
+app.use(cors({
+  origin: (origin, callback) => {
+    // Allow non-browser requests (no Origin header, e.g. curl/Postman) and
+    // any origin explicitly listed in CORS_ORIGIN.
+    if (!origin || env.corsOrigins.includes(origin)) return callback(null, true)
+    callback(new Error(`Origin ${origin} is not allowed by CORS`))
+  },
+}))
 app.use(morgan(env.nodeEnv === 'development' ? 'dev' : 'combined'))
 app.use(express.json())
 app.use(express.urlencoded({ extended: true }))
