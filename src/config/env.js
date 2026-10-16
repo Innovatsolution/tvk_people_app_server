@@ -35,6 +35,16 @@ export const env = {
     returnInResponse: (process.env.OTP_RETURN_IN_RESPONSE ?? 'true') !== 'false',
   },
 
+  // Admin chatbot (see services/complaintChatbot.service.js + ollama.service.js).
+  // The key is optional so the rest of the API still starts without it; the
+  // chatbot endpoint just answers 503 until it is set.
+  ollama: {
+    apiKey: process.env.OLLAMA_API_KEY || '',
+    url: process.env.OLLAMA_URL || 'https://ollama.com/api/chat',
+    model: process.env.OLLAMA_MODEL || 'gpt-oss:20b',
+    timeoutMs: Number(process.env.OLLAMA_TIMEOUT_MS) || 30000,
+  },
+
   jwtSecret: required('JWT_SECRET'),
   // 30 days - the citizen app now keeps the token in localStorage so people
   // stay logged in across app restarts; the token's own lifetime should be

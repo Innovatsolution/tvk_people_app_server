@@ -121,3 +121,24 @@ export async function countAllComplaintsByStatus() {
   )
   return Object.fromEntries(counts)
 }
+
+// Admin chatbot search. Only equality filters are sent to Firestore (several
+// equality filters need no composite index); everything else - dates, "contains"
+// text - is applied in Node by services/complaintChatbot.service.js.
+// select() keeps the base64 photos out of the payload: they can be hundreds of
+// KB per complaint and the chatbot never shows them.
+const SEARCH_FIELDS = [
+  'displayId', 'title', 'description', 'category', 'status',
+  'ward', 'rejectReason', 'userId', 'createdAt', 'updatedAt',
+]
+
+export async function searchComplaints({ category, status, displayId, userId } = {}) {
+  let query = complaintsCol
+  if (category) query = query.where('category', '==', category)
+  if (status) query = query.where('status', '==', status)
+  if (displayId) query = query.where('displayId', '==', displayId)
+  if (userId) query = query.where('userId', '==', userId)
+
+  const snap = await query.select(...SEARCH_FIELDS).get()
+  return snap.docs.map(toComplaint)
+}

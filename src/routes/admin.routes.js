@@ -11,6 +11,7 @@ import {
   setUserPassword,
 } from '../controllers/adminUsers.controller.js'
 import { listComplaintsForAdmin, getComplaintForAdmin } from '../controllers/adminComplaints.controller.js'
+import { askChatbot } from '../controllers/adminChatbot.controller.js'
 
 const router = Router()
 
@@ -48,5 +49,13 @@ router.get(
   listComplaintsForAdmin
 )
 router.get('/complaints/:id', [param('id').notEmpty()], validate, getComplaintForAdmin)
+
+// Natural-language complaint search for the admin panel's chat window.
+router.post(
+  '/chatbot/query',
+  [body('message').isString().trim().isLength({ min: 1, max: 500 }).withMessage('Type a question (up to 500 characters)')],
+  validate,
+  askChatbot
+)
 
 export default router
