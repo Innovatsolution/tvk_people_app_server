@@ -190,6 +190,9 @@ export function createComplaintNotifier({
 
       // 2. the citizen, when they gave an email address
       const address = String(args.requester?.email || '').trim().toLowerCase()
+      if (mailer.notifyCitizen !== false && !address) {
+        log.log(`[mail] ${label}: this citizen has no email address on their account, so only the office was emailed.`)
+      }
       if (mailer.notifyCitizen !== false && address) {
         if (!EMAIL_RE.test(address)) {
           log.warn(`[mail] ${label}: the citizen's email address is not valid, so no copy was sent to them.`)

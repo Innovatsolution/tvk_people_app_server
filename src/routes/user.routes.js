@@ -14,8 +14,9 @@ router.patch(
   '/me',
   [
     body('username').optional().trim().notEmpty().withMessage('Username cannot be empty'),
-    body('email').optional({ checkFalsy: true }).isEmail().withMessage('Enter a valid email address'),
-    body('ward').optional().trim().notEmpty().withMessage('Ward cannot be empty'),
+    body('email').optional({ checkFalsy: true }).trim().isEmail().withMessage('Enter a valid email address'),
+    // an empty ward is simply ignored (see updateMe) rather than rejected
+    body('ward').optional({ checkFalsy: true }).trim(),
   ],
   validate,
   updateMe

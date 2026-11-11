@@ -15,7 +15,10 @@ export const updateMe = asyncHandler(async (req, res) => {
   const allowed = ['username', 'email', 'ward']
   const patch = {}
   for (const key of allowed) {
-    if (req.body[key] !== undefined) patch[key] = req.body[key]
+    if (req.body[key] === undefined) continue
+    // An empty ward means "not filled in" - keep whatever is stored instead of overwriting it.
+    if (key === 'ward' && !String(req.body.ward).trim()) continue
+    patch[key] = key === 'email' ? String(req.body.email).trim().toLowerCase() : req.body[key]
   }
 
   const user = await updateUser(req.userId, patch)

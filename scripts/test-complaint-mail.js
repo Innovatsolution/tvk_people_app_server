@@ -325,6 +325,13 @@ test('no email on the account -> only the office is emailed', async () => {
   }
 })
 
+test('when a citizen has no email the log says so (so "why no copy?" is answered in the server log)', async () => {
+  const { sent, mailer } = recorder(); const { calls, log } = silent()
+  await createComplaintNotifier({ mailer, log, sleep: async () => {} }).notify(citizenArgs(null))
+  assert.equal(sent.length, 1)
+  assert.ok(calls.log.some((l) => l.includes('no email address on their account')), calls.log.join(' | '))
+})
+
 test('an invalid address is skipped with a warning, not sent', async () => {
   const { sent, mailer } = recorder(); const { calls, log } = silent()
   await createComplaintNotifier({ mailer, log, sleep: async () => {} }).notify(citizenArgs('not-an-email'))
