@@ -10,9 +10,20 @@ import {
   listComplaintsByUser,
   updateComplaintByDocId,
 } from '../repositories/complaint.repository.js'
+import { findUserById } from '../repositories/user.repository.js'
+import { notifyComplaintStage } from '../services/complaintNotifier.js'
 
 const VALID_CATEGORIES = ['road', 'light', 'water', 'waste', 'other']
 const VALID_STATUSES = ['accepted', 'rejected', 'pending', 'completed']
+
+// Emails the stage change to the office address (MAIL_TO). Fire-and-forget: it runs
+// after the response has gone out and can never fail or slow the request - see
+// services/complaintNotifier.js.
+function emailStage({ complaint, stage, previousStatus, changedBy }) {
+  findUserById(complaint.userId)
+    .catch(() => null)
+    .then((requester) => notifyComplaintStage({ complaint, requester, stage, previousStatus, changedBy }))
+}
 
 // GET /api/complaints?status=all|accepted_rejected|pending|completed
 export const listComplaints = asyncHandler(async (req, res) => {
@@ -57,6 +68,8 @@ export const createComplaintHandler = asyncHandler(async (req, res) => {
     rejectReason: null,
   })
 
+  emailStage({ complaint, stage: 'submitted' })
+
   res.status(201).json({ complaint: mapComplaint(complaint) })
 })
 
@@ -95,5 +108,8 @@ export const updateComplaintStatus = asyncHandler(async (req, res) => {
   }
 
   const updated = await updateComplaintByDocId(complaint.docId, patch)
+
+  emailStage({ complaint: updated, stage: status, previousStatus: complaint.status, changedBy: req.adminUser })
+
   res.json({ complaint: mapComplaint(updated) })
 })

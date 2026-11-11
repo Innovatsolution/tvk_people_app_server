@@ -45,6 +45,31 @@ export const env = {
     timeoutMs: Number(process.env.OLLAMA_TIMEOUT_MS) || 30000,
   },
 
+  // Email notifications: every stage of a complaint (new, accepted, rejected,
+  // pending, completed) is emailed to `to`. Off until SMTP_USER and SMTP_PASS are
+  // set - the rest of the API is unaffected either way.
+  // For a Gmail account SMTP_PASS must be a Google "App password" (16 characters),
+  // not the normal account password - see README ("Email notifications").
+  mail: (() => {
+    const user = process.env.SMTP_USER || ''
+    const pass = (process.env.SMTP_PASS || '').replace(/\s+/g, '') // Google shows app passwords in groups of 4
+    const officeRecipients = (process.env.MAIL_TO || user).split(',').map((a) => a.trim()).filter(Boolean)
+    return {
+      host: process.env.SMTP_HOST || 'smtp.gmail.com',
+      port: Number(process.env.SMTP_PORT) || 465,
+      secure: (process.env.SMTP_SECURE ?? 'true') !== 'false',
+      user,
+      pass,
+      from: process.env.MAIL_FROM || (user ? `TVK Complaints <${user}>` : ''),
+      // Office inbox(es) that get every stage. Comma-separate several addresses.
+      // If MAIL_TO is not set, mail goes to the sending account itself.
+      to: officeRecipients.join(', '),
+      // Also email the citizen who filed the complaint, when their account has an email address.
+      notifyCitizen: (process.env.NOTIFY_CITIZEN ?? 'true') !== 'false',
+      enabled: Boolean(user && pass),
+    }
+  })(),
+
   jwtSecret: required('JWT_SECRET'),
   // 30 days - the citizen app now keeps the token in localStorage so people
   // stay logged in across app restarts; the token's own lifetime should be
