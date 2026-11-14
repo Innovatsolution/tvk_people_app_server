@@ -177,5 +177,20 @@ test('stripSensitive never exposes the password hash or any OTP field', () => {
   assert.deepEqual(Object.keys(safe).sort(), ['id', 'mobile', 'username'])
 })
 
+test('the forgot-password flow stays screen-only: none of its code imports or calls any email sender', async () => {
+  const { readFileSync } = await import('node:fs')
+  const files = [
+    '../src/services/passwordReset.service.js',
+    '../src/services/otpDelivery.js',
+    '../src/controllers/auth.controller.js',
+    '../src/routes/auth.routes.js',
+  ]
+  for (const f of files) {
+    const source = readFileSync(new URL(f, import.meta.url), 'utf8')
+    const mailImport = /from\s+['"][^'"]*(mailer|complaintNotifier|nodemailer)[^'"]*['"]/.test(source)
+    assert.equal(mailImport, false, `${f} must not import email code - OTPs are shown in the app, never emailed`)
+  }
+})
+
 // firebase-admin is imported (never connected to) for stripSensitive; don't let it hold the process open
 test.after(() => setTimeout(() => process.exit(process.exitCode || 0), 50).unref())

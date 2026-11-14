@@ -3,8 +3,6 @@
 // messages through a local SMTP server (no Gmail, no internet needed).
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { SMTPServer } from 'smtp-server'
-import { simpleParser } from 'mailparser'
 import os from 'node:os'
 
 // config/env.js reads .env from the current folder. Run from a folder with none, so a developer's
@@ -15,14 +13,9 @@ process.env.JWT_SECRET = 'unit-test'
 process.env.FIREBASE_PROJECT_ID = 'unit-test'
 process.env.FIREBASE_CLIENT_EMAIL = 'unit-test@unit-test.iam.gserviceaccount.com'
 process.env.FIREBASE_PRIVATE_KEY = 'not-used-by-these-tests'
-process.env.SMTP_USER = 'tvkalwarkurichi@gmail.com'
-process.env.SMTP_PASS = 'abcd efgh ijkl mnop' // Google shows app passwords with spaces
-delete process.env.MAIL_TO
-for (const k of ['SMTP_HOST', 'SMTP_PORT', 'SMTP_SECURE', 'MAIL_FROM']) delete process.env[k]
+for (const k of ['SMTP_USER', 'SMTP_PASS', 'MAIL_TO', 'MAIL_TRANSPORT', 'RESEND_API_KEY', 'RESEND_FROM', 'MAIL_FROM', 'NOTIFY_CITIZEN']) delete process.env[k]
 
 const { buildComplaintEmail, createComplaintNotifier, STAGES } = await import('../src/services/complaintNotifier.js')
-const { createMailer, explainMailError } = await import('../src/services/mailer.js')
-const { env } = await import('../src/config/env.js')
 
 const BEFORE = Buffer.from('fake-before-photo-bytes')
 const AFTER = Buffer.from('fake-after-photo-bytes')
@@ -46,23 +39,47 @@ const admin = { username: 'Admin' }
 const at = new Date('2026-09-17T03:13:00Z') // 17 Sep 8:43 am IST
 
 // ============================ configuration ==================================
-test('config: sends to tvkalwarkurichi@gmail.com by default, and strips the spaces from a Google app password', () => {
-  assert.equal(env.mail.to, 'tvkalwarkurichi@gmail.com')
-  assert.equal(env.mail.pass, 'abcdefghijklmnop')
-  assert.equal(env.mail.host, 'smtp.gmail.com')
-  assert.equal(env.mail.port, 465)
-  assert.equal(env.mail.secure, true)
-  assert.equal(env.mail.enabled, true)
-  assert.equal(env.mail.from, 'TVK Complaints <tvkalwarkurichi@gmail.com>')
+test('config: Resend is the default; MAIL_TO lists the office inboxes; the email is OFF until both a key and MAIL_TO are set', async () => {
+  const load = async (vars, tag) => {
+    const saved = {}
+    for (const k of Object.keys(vars)) { saved[k] = process.env[k]; process.env[k] = vars[k] }
+    try { return (await import(`../src/config/env.js?${tag}`)).env.mail } finally { for (const k of Object.keys(vars)) saved[k] === undefined ? delete process.env[k] : (process.env[k] = saved[k]) }
+  }
+  const off = await load({}, 'mail-off')
+  assert.equal(off.transport, 'resend'); assert.equal(off.enabled, false); assert.equal(off.to, '')
+  assert.equal(off.notifyCitizen, true, 'citizen copies are on by default')
+
+  const on = await load({ RESEND_API_KEY: 're_abc1234567890', MAIL_TO: 'tvkalwarkurichiperur@gmail.com, mkumarazk@gmail.com ,' }, 'mail-on')
+  assert.equal(on.enabled, true)
+  assert.equal(on.to, 'tvkalwarkurichiperur@gmail.com, mkumarazk@gmail.com')
+
+  assert.equal((await load({ RESEND_API_KEY: 're_abc1234567890' }, 'mail-nomailto')).enabled, false, 'a key but nobody to send to')
+  assert.equal((await load({ MAIL_TO: 'a@x.com' }, 'mail-nokey')).enabled, false, 'recipients but no key')
+  assert.equal((await load({ NOTIFY_CITIZEN: 'false' }, 'mail-nocitizen')).notifyCitizen, false)
 })
 
-test('config: stays OFF (and does not crash) when no password is set', async () => {
-  const saved = process.env.SMTP_PASS
-  delete process.env.SMTP_PASS
+test('config: leftover SMTP settings are ignored (and flagged so the server can say so), never used', async () => {
+  const saved = { SMTP_USER: process.env.SMTP_USER, SMTP_PASS: process.env.SMTP_PASS, MAIL_TRANSPORT: process.env.MAIL_TRANSPORT }
+  process.env.SMTP_USER = 'old@gmail.com'; process.env.SMTP_PASS = 'abcdefghijklmnop'; process.env.MAIL_TRANSPORT = 'smtp'
   try {
-    const fresh = await import('../src/config/env.js?no-password')
-    assert.equal(fresh.env.mail.enabled, false)
-  } finally { process.env.SMTP_PASS = saved }
+    const m = (await import('../src/config/env.js?legacy-smtp')).env.mail
+    assert.equal(m.transport, 'resend', 'MAIL_TRANSPORT=smtp falls back to Resend')
+    assert.equal(m.enabled, false, 'an SMTP password does NOT switch email on')
+    assert.equal(m.legacySmtpSettings, true)
+  } finally { for (const [k, v] of Object.entries(saved)) v === undefined ? delete process.env[k] : (process.env[k] = v) }
+})
+
+test('notifier: an error flagged permanent is NOT retried, and the log carries the plain-language fix (never the key)', async () => {
+  let n = 0; const waits = []; const { calls, log } = silent()
+  const KEY = 're_thisIsTheSecretKey123456'
+  const mailer = { enabled: true, to: 'x@y', config: { transport: 'resend' }, send: async () => { n++; throw Object.assign(new Error(`Resend refused: API key is invalid.`), { code: 'ERESEND_AUTH', permanent: true }) } }
+  const { notify } = createComplaintNotifier({ mailer, log, sleep: async (ms) => waits.push(ms) })
+  assert.equal(await notify(args), false)
+  assert.equal(n, 1, 'one attempt only')
+  assert.deepEqual(waits, [])
+  assert.equal(calls.error.length, 1)
+  assert.match(calls.error[0], /resend\.com\/api-keys/)
+  assert.equal(calls.error[0].includes(KEY), false)
 })
 
 // ============================ email content ==================================
@@ -176,18 +193,6 @@ test('notifier: a temporary failure is retried 3 times in total, then given up o
   assert.equal(calls.error.length, 1)
 })
 
-test('notifier: a rejected Gmail login is NOT retried, and the log says to use an App Password (never the password itself)', async () => {
-  let n = 0; const waits = []; const { calls, log } = silent()
-  const mailer = { enabled: true, to: 'x@y', send: async () => { n++; throw Object.assign(new Error('Invalid login: 535 Username and Password not accepted'), { code: 'EAUTH', responseCode: 535 }) } }
-  const { notify } = createComplaintNotifier({ mailer, log, sleep: async (ms) => waits.push(ms) })
-  assert.equal(await notify(args), false)
-  assert.equal(n, 1, 'one attempt only')
-  assert.deepEqual(waits, [])
-  assert.equal(calls.error.length, 1)
-  assert.match(calls.error[0], /App Password/)
-  assert.equal(calls.error[0].includes(env.mail.pass), false, 'the password is never logged')
-})
-
 test('notifier: even broken input cannot make it throw', async () => {
   const { log } = silent()
   const { notify } = createComplaintNotifier({ mailer: { enabled: true, send: async () => {} }, log, sleep: async () => {} })
@@ -196,113 +201,13 @@ test('notifier: even broken input cannot make it throw', async () => {
 })
 
 // ============================ real SMTP delivery =============================
-async function startSmtp({ user, pass }) {
-  const received = []
-  const server = new SMTPServer({
-    authOptional: false,
-    allowInsecureAuth: true, // local test server, no TLS
-    disabledCommands: ['STARTTLS'],
-    onAuth(auth, session, cb) {
-      if (auth.username === user && auth.password === pass) return cb(null, { user })
-      return cb(Object.assign(new Error('535 5.7.8 Username and Password not accepted'), { responseCode: 535 }))
-    },
-    onData(stream, session, cb) {
-      simpleParser(stream).then((mail) => { received.push({ mail, envelope: session.envelope }); cb() }).catch(cb)
-    },
-  })
-  await new Promise((r) => server.listen(0, '127.0.0.1', r))
-  return { server, received, port: server.server.address().port }
-}
-
-test('real SMTP: a stage email is logged in, delivered to tvkalwarkurichi@gmail.com, with its photos attached', async () => {
-  const { server, received, port } = await startSmtp({ user: 'tvkalwarkurichi@gmail.com', pass: 'abcdefghijklmnop' })
-  try {
-    const mailer = createMailer({ ...env.mail, host: '127.0.0.1', port, secure: false })
-    const { log } = silent()
-    const { notify } = createComplaintNotifier({ mailer, log, retryDelaysMs: [] })
-
-    const done = complaint({ status: 'completed', afterImageBase64: `data:image/jpeg;base64,${AFTER.toString('base64')}`, rejectReason: null })
-    assert.equal(await notify({ complaint: done, requester, stage: 'completed', previousStatus: 'pending', changedBy: admin, at }), true)
-
-    assert.equal(received.length, 1)
-    const { mail, envelope } = received[0]
-    assert.deepEqual(envelope.rcptTo.map((r) => r.address), ['tvkalwarkurichi@gmail.com'])
-    assert.equal(mail.from.value[0].address, 'tvkalwarkurichi@gmail.com')
-    assert.equal(mail.subject, '[TVK Complaint] TVK_AZK_0011 – Completed: Water problem')
-    assert.ok(mail.text.includes('Stage: Pending → Completed'))
-    assert.ok(mail.html.includes('ஜோ செல்வர்ஷன்'))
-    assert.deepEqual(mail.attachments.map((a) => a.filename).sort(), ['TVK_AZK_0011-after.jpg', 'TVK_AZK_0011-before.jpg'])
-    assert.ok(mail.attachments.find((a) => a.filename.endsWith('before.jpg')).content.equals(BEFORE))
-    assert.ok(mail.attachments.find((a) => a.filename.endsWith('after.jpg')).content.equals(AFTER))
-  } finally { server.close() }
-})
-
-test('real SMTP: a wrong password is rejected - reported as a failure, not a crash', async () => {
-  const { server, received, port } = await startSmtp({ user: 'tvkalwarkurichi@gmail.com', pass: 'the-real-app-password' })
-  try {
-    const mailer = createMailer({ ...env.mail, host: '127.0.0.1', port, secure: false, pass: 'wrong-password' })
-    const { calls, log } = silent()
-    const { notify } = createComplaintNotifier({ mailer, log, retryDelaysMs: [] })
-    assert.equal(await notify(args), false)
-    assert.equal(received.length, 0)
-    assert.equal(calls.error.length, 1)
-    assert.match(calls.error[0], /App Password/)
-    assert.equal(calls.error[0].includes('wrong-password'), false)
-  } finally { server.close() }
-})
-
 // ============================ plain-language fixes ===========================
-test('explainMailError: the normal-password mistake is explained as "use an App Password"', () => {
-  const plain = explainMailError(Object.assign(new Error('Invalid login: 535-5.7.8 Username and Password not accepted'), { code: 'EAUTH', responseCode: 535 }))
-  assert.match(plain, /App Password/)
-  assert.match(plain, /not the normal account password/)
-
-  const twoStep = explainMailError(Object.assign(new Error('Invalid login: 534-5.7.9 Application-specific password required'), { code: 'EAUTH', responseCode: 534 }))
-  assert.match(twoStep, /App Password is required/)
-  assert.match(twoStep, /2-Step Verification/)
-})
-
-test('explainMailError: network and setup problems each get their own advice', () => {
-  const cfg = { host: 'smtp.gmail.com', port: 465 }
-  for (const code of ['ETIMEDOUT', 'ECONNREFUSED', 'ECONNECTION', 'ESOCKET']) {
-    const msg = explainMailError(Object.assign(new Error('x'), { code }), cfg)
-    assert.match(msg, /smtp\.gmail\.com:465/, code)
-    assert.match(msg, /SMTP_PORT=587/, code)
-  }
-  assert.match(explainMailError(Object.assign(new Error('error:0A00010B:SSL routines::wrong version number'), { code: 'ESOCKET' }), cfg), /SMTP_SECURE/)
-  assert.match(explainMailError(Object.assign(new Error('getaddrinfo ENOTFOUND smtp.gmial.com'), { code: 'ENOTFOUND' }), cfg), /SMTP_HOST/)
-  assert.equal(explainMailError(new Error('something unexpected')), '')
-})
-
-test('real SMTP: verify() succeeds with the right login and fails (with an explainable error) with a wrong one', async () => {
-  const { server, port } = await startSmtp({ user: 'tvkalwarkurichi@gmail.com', pass: 'abcdefghijklmnop' })
-  try {
-    const good = createMailer({ ...env.mail, host: '127.0.0.1', port, secure: false })
-    await good.verify()
-    const bad = createMailer({ ...env.mail, host: '127.0.0.1', port, secure: false, pass: 'my-normal-gmail-password' })
-    await assert.rejects(bad.verify(), (err) => { assert.match(explainMailError(err), /App Password/); return true })
-  } finally { server.close() }
-})
-
 // ============================ who receives it ================================
 const citizenArgs = (email, over = {}) => ({ ...args, requester: { ...requester, email }, ...over })
 const recorder = ({ to = 'office@x.com, mkumarazk@gmail.com', failFor = () => false, notifyCitizen } = {}) => {
   const sent = []
   return { sent, mailer: { enabled: true, to, notifyCitizen, send: async (m) => { if (failFor(m)) throw Object.assign(new Error('refused'), { responseCode: 550 }); sent.push(m) } } }
 }
-
-test('config: MAIL_TO can list several addresses (the office + mkumarazk@gmail.com); default is the sending account', async () => {
-  process.env.MAIL_TO = 'tvkalwarkurichiperur@gmail.com, mkumarazk@gmail.com ,'
-  process.env.NOTIFY_CITIZEN = 'false'
-  try {
-    const fresh = await import('../src/config/env.js?mail-list')
-    assert.equal(fresh.env.mail.to, 'tvkalwarkurichiperur@gmail.com, mkumarazk@gmail.com')
-    assert.equal(fresh.env.mail.notifyCitizen, false)
-  } finally { delete process.env.MAIL_TO; delete process.env.NOTIFY_CITIZEN }
-  const defaults = await import('../src/config/env.js?mail-default')
-  assert.equal(defaults.env.mail.to, 'tvkalwarkurichi@gmail.com', 'no MAIL_TO -> the sending account itself')
-  assert.equal(defaults.env.mail.notifyCitizen, true, 'citizen copies are on by default')
-})
 
 test('a citizen with an email gets their OWN copy of the same message; the office gets one email for all its addresses', async () => {
   const { sent, mailer } = recorder(); const { log } = silent()
@@ -389,31 +294,6 @@ test('a failed citizen send does not count against their hourly limit', async ()
   r.mailer.send = async (m) => { r.sent.push(m) } // mail server recovers
   await notify(citizenArgs('citizen@example.com'))
   assert.equal(r.sent.filter((m) => m.to === 'citizen@example.com').length, 1)
-})
-
-test('real SMTP: the office list and the citizen each get exactly one email, and neither sees the other\'s address', async () => {
-  const { server, received, port } = await startSmtp({ user: 'tvkalwarkurichi@gmail.com', pass: 'abcdefghijklmnop' })
-  try {
-    const mailer = createMailer({ ...env.mail, host: '127.0.0.1', port, secure: false, to: 'tvkalwarkurichiperur@gmail.com, mkumarazk@gmail.com' })
-    const { log } = silent()
-    const { notify } = createComplaintNotifier({ mailer, log, retryDelaysMs: [] })
-    assert.equal(await notify(citizenArgs('citizen@example.com', { stage: 'rejected', complaint: complaint({ status: 'rejected', rejectReason: 'Not in our ward' }) })), true)
-
-    assert.equal(received.length, 2)
-    const byRcpt = (addr) => received.find((r) => r.envelope.rcptTo.some((x) => x.address === addr))
-    const office = byRcpt('tvkalwarkurichiperur@gmail.com')
-    const citizen = byRcpt('citizen@example.com')
-
-    assert.deepEqual(office.envelope.rcptTo.map((x) => x.address).sort(), ['mkumarazk@gmail.com', 'tvkalwarkurichiperur@gmail.com'])
-    assert.deepEqual(citizen.envelope.rcptTo.map((x) => x.address), ['citizen@example.com'])
-    assert.equal(office.mail.to.text.includes('citizen@example.com'), false, "office email doesn't show the citizen's address")
-    assert.equal(citizen.mail.to.text.includes('mkumarazk'), false, "citizen email doesn't show the office addresses")
-    for (const r of [office, citizen]) {
-      assert.equal(r.mail.subject, '[TVK Complaint] TVK_AZK_0011 – Rejected: Water problem')
-      assert.ok(r.mail.text.includes('Rejection reason: Not in our ward'))
-      assert.equal(r.mail.attachments.length, 1)
-    }
-  } finally { server.close() }
 })
 
 test.after(() => setTimeout(() => process.exit(process.exitCode || 0), 50).unref())

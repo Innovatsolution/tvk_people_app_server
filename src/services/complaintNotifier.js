@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { createMailer, explainMailError } from './mailer.js'
 
 // One entry per complaint stage. `short` goes in the subject line.
@@ -152,15 +153,18 @@ export function createComplaintNotifier({
 
   // One send with the retry rules. Returns true/false, never throws.
   async function sendWithRetry(message, to, label, who) {
+    // One key for every attempt at THIS email. A mail API that supports it (Resend) uses it so that, if the
+    // email was accepted but the reply got lost and we retry, it is not delivered twice.
+    const idempotencyKey = randomUUID()
     for (let attempt = 0; ; attempt += 1) {
       try {
-        await mailer.send(to ? { ...message, to } : message)
+        await mailer.send({ ...message, ...(to ? { to } : {}), idempotencyKey })
         log.log(`[mail] ${label} -> sent to ${who}`)
         return true
       } catch (err) {
-        // A rejected login (wrong/expired password) or a permanent 5xx refusal won't fix
-        // itself in a few seconds, so don't keep retrying those - only network hiccups.
-        const permanent = err?.code === 'EAUTH' || (err?.responseCode >= 500 && err?.responseCode < 600)
+        // Errors flagged `permanent` (wrong API key, unverified domain, plan limit used up...) won't fix
+        // themselves in a few seconds, so they are not retried - only temporary hiccups are.
+        const permanent = err?.permanent === true
         if (permanent || attempt >= retryDelaysMs.length) {
           const advice = explainMailError(err, mailer.config)
           const hint = advice ? ` ${advice}` : ''
@@ -177,7 +181,7 @@ export function createComplaintNotifier({
       if (!mailer.enabled) {
         if (!warnedDisabled) {
           warnedDisabled = true
-          log.warn('[mail] Email notifications are OFF - set SMTP_USER and SMTP_PASS in .env to turn them on.')
+          log.warn('[mail] Email notifications are OFF - set RESEND_API_KEY and MAIL_TO to turn them on.')
         }
         return false
       }

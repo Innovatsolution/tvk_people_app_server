@@ -45,28 +45,50 @@ export const env = {
     timeoutMs: Number(process.env.OLLAMA_TIMEOUT_MS) || 30000,
   },
 
-  // Email notifications: every stage of a complaint (new, accepted, rejected,
-  // pending, completed) is emailed to `to`. Off until SMTP_USER and SMTP_PASS are
-  // set - the rest of the API is unaffected either way.
-  // For a Gmail account SMTP_PASS must be a Google "App password" (16 characters),
-  // not the normal account password - see README ("Email notifications").
+  // Email notifications: every stage of a complaint (new, accepted, rejected, pending, completed)
+  // is emailed through Resend (https://resend.com) - an email API over HTTPS, so it also works on
+  // hosts that block normal mail ports (such as Render's free plan). Needs RESEND_API_KEY and
+  // MAIL_TO, and a domain you own verified in Resend to email anyone but the Resend account's own
+  // address - see the README ("Email notifications"). Until RESEND_API_KEY and MAIL_TO are set the
+  // feature is simply off; the rest of the API is unaffected either way.
   mail: (() => {
-    const user = process.env.SMTP_USER || ''
-    const pass = (process.env.SMTP_PASS || '').replace(/\s+/g, '') // Google shows app passwords in groups of 4
-    const officeRecipients = (process.env.MAIL_TO || user).split(',').map((a) => a.trim()).filter(Boolean)
+    const officeRecipients = (process.env.MAIL_TO || '').split(',').map((a) => a.trim()).filter(Boolean)
+
+    // How mail leaves the server:
+    //  'resend' (default) - Resend's email API.
+    //  'relay'            - optional no-domain fallback: HTTPS through a small Google Apps Script on a
+    //                        Gmail account (scripts/gmail-relay.gs). Limited to 100 recipients a day.
+    // (SMTP support has been removed.)
+    const requested = (process.env.MAIL_TRANSPORT || 'resend').trim().toLowerCase()
+    const transport = requested === 'relay' ? 'relay' : 'resend'
+    const fromName = process.env.MAIL_FROM_NAME || 'TVK Complaints'
+    const resendApiKey = (process.env.RESEND_API_KEY || '').trim()
+    const relayUrl = (process.env.MAIL_RELAY_URL || '').trim()
+    const relaySecret = (process.env.MAIL_RELAY_SECRET || '').trim()
+
     return {
-      host: process.env.SMTP_HOST || 'smtp.gmail.com',
-      port: Number(process.env.SMTP_PORT) || 465,
-      secure: (process.env.SMTP_SECURE ?? 'true') !== 'false',
-      user,
-      pass,
-      from: process.env.MAIL_FROM || (user ? `TVK Complaints <${user}>` : ''),
+      transport,
+      fromName,
+      // Resend. The default sender is Resend's TEST sender, which only delivers to the Resend
+      // account's own address - set RESEND_FROM to an address on your verified domain.
+      resendApiKey,
+      resendFrom: process.env.RESEND_FROM || process.env.MAIL_FROM || `${fromName} <onboarding@resend.dev>`,
+      resendApiUrl: (process.env.RESEND_API_URL || 'https://api.resend.com').replace(/\/+$/, ''),
+      resendTimeoutMs: Number(process.env.RESEND_TIMEOUT_MS) || 20000,
+      // Optional Gmail relay
+      relayUrl,
+      relaySecret,
+      relayTimeoutMs: Number(process.env.MAIL_RELAY_TIMEOUT_MS) || 30000,
       // Office inbox(es) that get every stage. Comma-separate several addresses.
-      // If MAIL_TO is not set, mail goes to the sending account itself.
       to: officeRecipients.join(', '),
       // Also email the citizen who filed the complaint, when their account has an email address.
       notifyCitizen: (process.env.NOTIFY_CITIZEN ?? 'true') !== 'false',
-      enabled: Boolean(user && pass),
+      enabled:
+        transport === 'relay'
+          ? Boolean(relayUrl && relaySecret && officeRecipients.length)
+          : Boolean(resendApiKey && officeRecipients.length),
+      // Leftovers from the old SMTP setup - ignored, but the server mentions them at startup.
+      legacySmtpSettings: Boolean(process.env.SMTP_USER || process.env.SMTP_PASS || requested === 'smtp'),
     }
   })(),
 

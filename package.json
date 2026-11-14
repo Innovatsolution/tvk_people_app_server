@@ -13,7 +13,9 @@
     "test:otp": "node --test scripts/test-password-reset.js",
     "test:chatbot": "node --test scripts/test-chatbot.js",
     "test:mail": "node --test scripts/test-complaint-mail.js",
-    "mail:check": "node scripts/check-mail.js"
+    "mail:check": "node scripts/check-mail.js",
+    "test:relay": "node --test scripts/test-mail-relay.js",
+    "test:resend": "node --test scripts/test-mail-resend.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
@@ -26,13 +28,10 @@
     "jsonwebtoken": "^9.0.2",
     "morgan": "^1.10.0",
     "multer": "^2.0.1",
-    "nodemailer": "^10.5.0",
     "sharp": "^0.33.5"
   },
   "devDependencies": {
-    "mailparser": "^3.14.3",
-    "nodemon": "^3.1.4",
-    "smtp-server": "^3.21.4"
+    "nodemon": "^3.1.4"
   },
   "engines": {
     "node": ">=18.0.0"
